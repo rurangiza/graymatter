@@ -1,0 +1,4 @@
+script:pre-request {
+  const uuid = require("uuid")
+  bru.setVar("uuid",uuid.v4())
+}
