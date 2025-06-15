@@ -12,14 +12,19 @@ class ChatRequest(BaseModel):
     temperature: float = 0.8
     top_p: float = 1.0
     stream: bool = False
-    tools: list[str]
+    tools: list[str] = []
 
 
 class ChatResponse(BaseModel):
     response: str
 
 
+class ChatCompletionToolCall(BaseModel):
+    function_name: str
+    arguments: str
+
+
 class GenerationResponse(BaseModel):
     content: str | None
     usage: CompletionUsage
-    tool_calls: ChatCompletionMessageToolCall | None
+    tool_calls: list[ChatCompletionMessageToolCall | ChatCompletionToolCall] | None

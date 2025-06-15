@@ -5,5 +5,5 @@
 - [x] make simple request with tools work, no db involved
 - [x] add streaming route
 - [x] support tool calling
-- [ ] save and retrieve message from database using 
-- [ ] 
+- [x] support tool calling for streaming
+- [ ] save and retrieve message from database using SQLAlchemy

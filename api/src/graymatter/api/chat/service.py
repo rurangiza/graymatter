@@ -2,25 +2,30 @@ import json
 import os
 from abc import ABC, abstractmethod
 
-from openai import OpenAI
+from openai import OpenAI, Stream
 from openai.types.chat import (
+    ChatCompletion,
     ChatCompletionAssistantMessageParam,
+    ChatCompletionChunk,
     ChatCompletionMessageParam,
+    ChatCompletionMessageToolCall,
     ChatCompletionToolMessageParam,
     ChatCompletionToolParam,
 )
 from openai.types.chat import ChatCompletionMessageToolCall as ToolCallMessage
 
-from graymatter.api.chat.exceptions import CompletionError
+from graymatter.api.chat.exceptions import (
+    CompletionError,
+    StreamingError,
+    UnexpectedFinishReason,
+)
 from graymatter.tools import ToolRegistry
 
-from .schema import GenerationResponse
+from .schema import ChatCompletionToolCall, GenerationResponse
 from .utils import Usage
 
 
 class LLMClient(ABC):
-    tool_registry: ToolRegistry = None
-
     @abstractmethod
     def complete(
         self,
@@ -63,20 +68,23 @@ class OpenAIClient(LLMClient):
         self.__api_key: str = os.environ["OPENAI_API_KEY"]
         self.client: OpenAI = OpenAI(api_key=self.__api_key)
         self.model = model
-        self.usage = Usage()
         self.tool_registry = tool_registry
+
+        self.usage = Usage()
+        self.streamed_content: str = ""
+        self.tool_calls: list[ChatCompletionMessageToolCall] = None
 
     def complete(
         self,
         messages: list[ChatCompletionMessageParam],
         temperature: float,
         top_p: float,
-        tools: list[str] | None = [],
+        tools: list[str] = [],
     ) -> GenerationResponse:
         try:
             tool_definitions = self.tool_registry.get_tool_definitions_by_names(tools)
 
-            response = self.client.chat.completions.create(
+            response: ChatCompletion = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=temperature,
@@ -88,12 +96,13 @@ class OpenAIClient(LLMClient):
             self.usage += response.usage
 
             if tool_calls := response.choices[0].message.tool_calls:
+                self.tool_calls = tool_calls
                 messages.append(
                     ChatCompletionAssistantMessageParam(
-                        content=None, role="assistant", tool_calls=tool_calls
+                        content=None, role="assistant", tool_calls=self.tool_calls
                     )
                 )
-                messages.extend(self.execute_tools(tool_calls))
+                messages.extend(self.execute_tools(self.tool_calls))
                 return self.complete(
                     messages=messages,
                     temperature=temperature,
@@ -102,12 +111,8 @@ class OpenAIClient(LLMClient):
 
             return GenerationResponse(
                 content=response.choices[0].message.content,
-                usage={
-                    "completion_tokens": self.usage.completion_tokens,
-                    "prompt_tokens": self.usage.prompt_tokens,
-                    "total_tokens": self.usage.total_tokens,
-                },
-                tool_calls=response.choices[0].message.tool_calls,
+                usage=self.usage.dict(),
+                tool_calls=self.tool_calls,
             )
         except Exception as e:
             raise CompletionError(e)
@@ -117,39 +122,70 @@ class OpenAIClient(LLMClient):
         messages: list[ChatCompletionMessageParam],
         temperature: float,
         top_p: float,
-        tools: list[ChatCompletionToolParam] | None = None,
+        tools: list[str] = [],
     ) -> GenerationResponse:
-        stream_response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            top_p=top_p,
-            stream=True,
-            stream_options={"include_usage": True},
-            tool_choice="auto",
-            tools=tools,
-        )
-        first_chunk = next(stream_response)
+        try:
+            tool_definitions = self.tool_registry.get_tool_definitions_by_names(tools)
 
-        full_content, usage = "", {}
+            stream_response: Stream[ChatCompletionChunk] = (
+                self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=temperature,
+                    top_p=top_p,
+                    stream=True,
+                    stream_options={"include_usage": True},
+                    tool_choice="auto" if tool_definitions else None,
+                    tools=tool_definitions,
+                )
+            )
 
-        if first_chunk.choices[0].delta.tool_calls:
-            raise NotImplementedError("Tool calls are not available")
-        else:
-            full_content += first_chunk.choices[0].delta.content
+            _tool_calls: dict[int, ChatCompletionMessageToolCall] = {}
+            _finish_reason: str = ""
+            for chunk in stream_response:
+                if choices := chunk.choices:
+                    for tool_call in choices[0].delta.tool_calls or []:
+                        index = tool_call.index
+                        if index not in _tool_calls:
+                            _tool_calls[index] = tool_call
+                        _tool_calls[
+                            index
+                        ].function.arguments += tool_call.function.arguments
+                    if content := choices[0].delta.content:
+                        self.streamed_content += content
+                    if finish_reason := choices[0].finish_reason:
+                        # we don't exit because the usage chunk comes after finish_reason
+                        _finish_reason = finish_reason
+                if usage := chunk.usage:
+                    self.usage += usage
 
-        for chunk in stream_response:
-            if chunk.choices and (content := chunk.choices[0].delta.content):
-                full_content += content
-            elif completion_usage := chunk.usage:
-                usage = completion_usage
-
-        return GenerationResponse(
-            content=full_content,
-            usage={
-                "completion_tokens": usage.completion_tokens,
-                "prompt_tokens": usage.prompt_tokens,
-                "total_tokens": usage.total_tokens,
-            },
-            tool_calls=None,
-        )
+            match _finish_reason:
+                case "stop":
+                    return GenerationResponse(
+                        content=self.streamed_content,
+                        usage=self.usage.dict(),
+                        tool_calls=[
+                            ChatCompletionToolCall(
+                                function_name=tool_call.function.name,
+                                arguments=tool_call.function.arguments,
+                            )
+                            for tool_call in self.tool_calls
+                        ]
+                        if self.tool_calls
+                        else None,
+                    )
+                case "tool_calls":
+                    self.tool_calls = list(_tool_calls.values())
+                    messages.append(
+                        ChatCompletionAssistantMessageParam(
+                            content=None,
+                            role="assistant",
+                            tool_calls=self.tool_calls,
+                        )
+                    )
+                    messages.extend(self.execute_tools(self.tool_calls))
+                    return self.stream(messages, temperature, top_p)
+                case _:
+                    raise UnexpectedFinishReason(finish_reason)
+        except Exception as e:
+            raise StreamingError(str(e))

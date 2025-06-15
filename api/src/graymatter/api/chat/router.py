@@ -20,6 +20,7 @@ async def completion(request: ChatRequest) -> GenerationResponse:
                 ],
                 temperature=request.temperature,
                 top_p=request.top_p,
+                tools=request.tools,
             )
         else:
             return client.complete(
