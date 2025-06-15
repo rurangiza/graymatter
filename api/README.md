@@ -3,7 +3,7 @@
 ## Todo
 
 - [x] make simple request with tools work, no db involved
-- [ ] add streaming route
+- [x] add streaming route
+- [x] support tool calling
+- [ ] save and retrieve message from database using 
 - [ ] 
-- [ ] save and retrieve messages from database, using prisma and DAL
-- [ ]

@@ -1,8 +1,8 @@
 from datetime import datetime
 
-from graymatter.tools import Tool
+from graymatter.tools.tool import Tool
 
 
 class GetDate(Tool):
-    def resolve(self):
+    def resolve(self) -> str:
         return f"Today's date is {datetime.today()}"

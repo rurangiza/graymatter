@@ -23,7 +23,7 @@ class ToolRegistry(ABC):
     def get_tool_by_name(self, tool_name: str) -> type[Tool]:
         pass
 
-    def get_tool_definition_by_name(
-        self, tool_name: str, provider: ModelProvider = ModelProvider.OPENAI
-    ) -> dict:
+    def get_tool_definitions_by_names(
+        self, tool_names: list[str], provider: ModelProvider = ModelProvider.OPENAI
+    ) -> dict | None:
         pass
