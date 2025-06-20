@@ -1,7 +1,5 @@
 from uuid import UUID, uuid4
 
-from openai.types import CompletionUsage
-from openai.types.chat import ChatCompletionMessageToolCall
 from pydantic import BaseModel, Field
 
 
@@ -19,12 +17,18 @@ class ChatResponse(BaseModel):
     response: str
 
 
-class ChatCompletionToolCall(BaseModel):
-    function_name: str
-    arguments: str
+class Usage(BaseModel):
+    completion_tokens: int
+    prompt_tokens: int
+    total_tokens: int
+
+
+class ToolCall(BaseModel):
+    name: str
+    arguments: dict[str, str]
 
 
 class GenerationResponse(BaseModel):
     content: str | None
-    usage: CompletionUsage
-    tool_calls: list[ChatCompletionMessageToolCall | ChatCompletionToolCall] | None
+    usage: Usage
+    tool_calls: list[ToolCall] | None

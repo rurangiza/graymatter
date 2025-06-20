@@ -1,6 +1,7 @@
 # additional
 .ipynb
 .vscode/
+todos.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

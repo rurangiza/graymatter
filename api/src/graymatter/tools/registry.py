@@ -4,12 +4,14 @@ from graymatter.tools.constants import ModelProvider
 from graymatter.tools.exceptions import ToolNotFound, UnsupportedProvider
 
 from ._abstract_registry import ToolRegistry
-from .implementations import GetDate
+from .implementations import GetDate, WebSearch
 from .tool import Tool
 
 
 class BaseRegistry(ToolRegistry):
-    _tool_classes: list[Tool] = [GetDate]
+    """Tells you which tools are there and allows you to retrieve them"""
+
+    _tool_classes: list[Tool] = [GetDate, WebSearch]
 
     def __init__(self) -> None:
         self._tools = {tool.name(): tool for tool in BaseRegistry._tool_classes}

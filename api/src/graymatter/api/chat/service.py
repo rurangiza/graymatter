@@ -21,7 +21,7 @@ from graymatter.api.chat.exceptions import (
 )
 from graymatter.tools import ToolRegistry
 
-from .schema import ChatCompletionToolCall, GenerationResponse
+from .schema import GenerationResponse, ToolCall
 from .utils import Usage
 
 
@@ -112,7 +112,13 @@ class OpenAIClient(LLMClient):
             return GenerationResponse(
                 content=response.choices[0].message.content,
                 usage=self.usage.dict(),
-                tool_calls=self.tool_calls,
+                tool_calls=[
+                    ToolCall(
+                        name=tool_call.function.name,
+                        arguments=json.loads(tool_call.function.arguments),
+                    )
+                    for tool_call in self.tool_calls
+                ],
             )
         except Exception as e:
             raise CompletionError(e)
@@ -165,9 +171,9 @@ class OpenAIClient(LLMClient):
                         content=self.streamed_content,
                         usage=self.usage.dict(),
                         tool_calls=[
-                            ChatCompletionToolCall(
-                                function_name=tool_call.function.name,
-                                arguments=tool_call.function.arguments,
+                            ToolCall(
+                                name=tool_call.function.name,
+                                arguments=json.loads(tool_call.function.arguments),
                             )
                             for tool_call in self.tool_calls
                         ]
@@ -186,6 +192,6 @@ class OpenAIClient(LLMClient):
                     messages.extend(self.execute_tools(self.tool_calls))
                     return self.stream(messages, temperature, top_p)
                 case _:
-                    raise UnexpectedFinishReason(finish_reason)
+                    raise UnexpectedFinishReason(_finish_reason)
         except Exception as e:
             raise StreamingError(str(e))
