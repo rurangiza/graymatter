@@ -1,0 +1,34 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  GREETING: Hello, World!
+
+tasks:
+  default:
+    cmds:
+      - echo "{{.GREETING}}"
+    silent: true
+  start-local:
+    # starts fastapi server locally
+    cmds:
+      - fastapi run ./src/graymatter/main.py --reload
+  build:*:
+    # builds image with specified tag
+    vars:
+      IMAGE_NAME: "{{index .MATCH 0}}"
+    cmds:
+      - docker build -t {{.IMAGE_NAME}} .
+  start-docker:*:
+    # starts container on port 8080
+    vars:
+      IMAGE_NAME: "{{index .MATCH 0}}"
+    cmds:
+      - docker container run -it -p 8080:8000 {{.IMAGE_NAME}} sh
+  exec:*:*:
+    # execute bash command inside running container
+    vars:
+      IMAGE_NAME: "{{index .MATCH 0}}"
+    cmds:
+      - docker container exec -it {{.IMAGE_NAME}} 
